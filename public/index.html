@@ -1,0 +1,298 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NJ-WhatsApp Games — Party Quiz for WhatsApp</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="container">
+    <div id="roomCard" class="card">
+      <div class="row">
+        <img id="icon" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 2a10 10 0 1 0 9.42 13.3l.5 4.27l-4.22-1.1A10 10 0 0 0 12 2m4.71 13.29q-.48.51-1.18.57q-2.75.26-5.73-2.63t-2.63-5.73q.06-.7.57-1.18A1 1 0 0 1 9 6l.67 2a1 1 0 0 1-.14.94l-.3.46q-.14.21-.05.46q.15.38.47.83q.54.75 1.08 1.29t1.29 1.08q.45.32.83.47q.25.09.46-.05l.46-.3a1 1 0 0 1 .94-.14L18 14a1 1 0 0 1 .25 1.71Z'/%3E%3C/svg%3E"/>
+        <div>
+          <div class="h1">NJ-WhatsApp Games</div>
+          <div class="h2">Fun quizzes you can share on WhatsApp</div>
+        </div>
+      </div>
+      <div id="notice"><b>Tip:</b> Create a room, press Share to WhatsApp, and everyone taps the link to join.</div>
+      <div id="cta">
+        <button class="btn primary" id="create">Create Room (Host)</button>
+        <a class="btn ghost" href="#join">Join Room (Player)</a>
+      </div>
+      <div id="hostOnly">
+        <p>Room Code: <span id="roomCode" class="code"></span></p>
+        <div id="roomLinkWrap">Join Link: <span id="roomLink" class="code"></span></div>
+        <div class="row" style="margin-top:8px; gap:8px;">
+          <a id="whatsappShare" class="btn share" target="_blank" rel="noopener">Share to WhatsApp</a>
+          <button id="copyLink" class="btn">Copy Link</button>
+          <span id="answers">Answers so far: <span id="answersCount">0</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="joinCard" class="card">
+      <a id="join"></a>
+      <div class="h2">Join a Room</div>
+      <div class="grid cols-2">
+        <div>
+          <label>Room Code</label>
+          <input id="joinCode" placeholder="e.g. ABC123" />
+        </div>
+        <div>
+          <label>Your Name</label>
+          <input id="joinName" placeholder="e.g. Ali" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button id="joinBtn" class="btn primary">Join</button>
+      </div>
+      <div id="playersWrap" style="margin-top:12px;">
+        <div id="playersTitle">Players in Lobby</div>
+        <div id="players"></div>
+        <div id="playersEmpty">No one yet. Share the join link above.</div>
+      </div>
+    </div>
+
+    <div id="questionCard" class="card">
+      <div class="h2">Question</div>
+      <div id="qText">Create a room to start</div>
+      <div id="qMedia"></div>
+      <div id="timer"></div>
+      <div id="options" class="options"></div>
+    </div>
+
+    <div id="answerCard" class="card">
+      <div class="h2">Answer & Leaderboard</div>
+      <div id="answer"></div>
+      <div id="leaderboard"></div>
+    </div>
+
+    <div id="hostTools" class="card">
+      <div class="row" style="justify-content: space-between;">
+        <div class="h2">Host Tools</div>
+        <div id="hostToolsToggle" class="badge">Hide</div>
+      </div>
+
+      <div id="qImporter">
+        <label>Paste questions (JSON array) or upload CSV</label>
+        <textarea id="qInput" placeholder='Example JSON:
+[{"text":"Guess this monument","media":{"type":"image","url":"/uploads/taj.jpg"},"options":["Agra","Delhi","Hyderabad","Jaipur"],"correctIndex":0,"points":1000,"timeLimit":20}]'></textarea>
+        <input type="file" id="qFile" accept=".csv,.json" />
+        <div id="importExamples">CSV format: <code>text,optionA,optionB,optionC,optionD,correctIndex,points,timeLimit,mediaType,mediaUrl</code></div>
+        <button id="loadBtn" class="btn primary">Load Questions</button>
+      </div>
+
+      <div id="hostControls" style="margin-top:12px;">
+        <button id="startBtn" class="btn primary">Start</button>
+        <button id="revealBtn" class="btn ghost">Reveal</button>
+        <button id="nextBtn" class="btn ghost">Next</button>
+      </div>
+      <div id="danger">Note: This MVP keeps data in memory. Restarting the server clears rooms.</div>
+    </div>
+
+    <div id="how" class="card">
+      <div class="h2">How it works</div>
+      <ol>
+        <li>Click <b>Create Room</b> and share the join link in your WhatsApp group.</li>
+        <li>Paste or upload a set of questions (supports image/audio/video via JSON/CSV).</li>
+        <li>When ready, press <b>Start</b>. Players see questions and answer on their phones.</li>
+        <li>Press <b>Reveal</b> to show the correct answer + leaderboard, then <b>Next</b>.</li>
+      </ol>
+      <p id="copyright">© 2025 NJ-WhatsApp Games MVP</p>
+    </div>
+
+    <div id="footer">Made for family game nights 🎉</div>
+  </div>
+
+  <div id="toast"></div>
+  <a id="whats-badge" class="share" target="_blank" rel="noopener" style="display:none;">Share</a>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let roomCode = null;
+    let isHost = false;
+    let currentQuestion = null;
+    let answered = false;
+
+    const $ = (s) => document.querySelector(s);
+    const $$ = (s) => Array.from(document.querySelectorAll(s));
+    const toast = (t) => { const el = $('#toast'); el.textContent = t; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'), 1600); };
+
+    const updateShareLinks = () => {
+      const link = location.origin + '/?join=' + roomCode;
+      $('#roomLink').textContent = link;
+      $('#roomCode').textContent = roomCode;
+      $('#whatsappShare').href = 'https://wa.me/?text=' + encodeURIComponent('Join our quiz! Room ' + roomCode + ' ' + link);
+      $('#whats-badge').href = $('#whatsappShare').href;
+      $('#whats-badge').style.display = 'inline-block';
+    };
+
+    const setHostUI = (on) => {
+      $('#hostOnly').style.display = on ? 'block' : 'none';
+      $('#hostTools').style.display = on ? 'block' : 'none';
+    };
+
+    $('#create').addEventListener('click', () => {
+      socket.emit('host:createRoom', {}, (res) => {
+        if (!res.ok) return toast(res.error || 'Failed to create');
+        isHost = true; roomCode = res.code; updateShareLinks(); setHostUI(true);
+        toast('Room ' + roomCode + ' created');
+      });
+    });
+
+    $('#copyLink').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('#roomLink').textContent); toast('Link copied'); } catch {}
+    });
+
+    $('#joinBtn').addEventListener('click', () => {
+      const code = ($('#joinCode').value || '').trim();
+      const name = ($('#joinName').value || '').trim() || 'Player';
+      socket.emit('player:join', { code, name }, (res) => {
+        if (!res.ok) return toast(res.error || 'Join failed');
+        roomCode = code.toUpperCase(); toast('Joined room ' + roomCode);
+      });
+    });
+
+    // Deep link join: /?join=CODE
+    const params = new URLSearchParams(location.search);
+    if (params.get('join')) {
+      $('#joinCode').value = params.get('join').toUpperCase();
+      document.getElementById('join').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Host tools
+    $('#hostToolsToggle').addEventListener('click', () => {
+      const el = $('#hostTools'); const on = el.style.display !== 'none';
+      el.style.display = on ? 'none' : 'block';
+      $('#hostToolsToggle').textContent = on ? 'Show' : 'Hide';
+    });
+
+    function parseCSV(text) {
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      const out = [];
+      for (const line of lines) {
+        const parts = line.split(',');
+        if (parts.length < 5) continue;
+        out.push({
+          text: parts[0],
+          options: parts.slice(1, 5),
+          correctIndex: Number(parts[5] || 0),
+          points: Number(parts[6] || 1000),
+          timeLimit: Number(parts[7] || 20),
+          media: (parts[8] && parts[9]) ? { type: parts[8], url: parts[9] } : null
+        });
+      }
+      return out;
+    }
+
+    async function importQuestions() {
+      let arr = [];
+      const txt = $('#qInput').value.trim();
+      if (txt) {
+        try { arr = JSON.parse(txt); } catch(e) { arr = parseCSV(txt); }
+      }
+      if (!arr.length && $('#qFile').files[0]) {
+        const file = $('#qFile').files[0];
+        const text = await file.text();
+        try { arr = JSON.parse(text); } catch(e) { arr = parseCSV(text); }
+      }
+      return arr;
+    }
+
+    $('#loadBtn').addEventListener('click', async () => {
+      const questions = await importQuestions();
+      if (!questions.length) return toast('No questions detected');
+      socket.emit('host:loadQuestions', { code: roomCode, questions }, (res) => {
+        if (!res.ok) return toast(res.error || 'Load failed');
+        toast('Loaded ' + res.count + ' questions');
+      });
+    });
+
+    $('#startBtn').addEventListener('click', () => {
+      socket.emit('host:start', { code: roomCode }, (res) => {
+        if (!res.ok) return toast(res.error || 'Cannot start');
+      });
+    });
+
+    $('#revealBtn').addEventListener('click', () => {
+      socket.emit('host:reveal', { code: roomCode }, () => {});
+    });
+
+    $('#nextBtn').addEventListener('click', () => {
+      socket.emit('host:next', { code: roomCode }, () => {});
+      answered = false;
+    });
+
+    function renderQuestion(q) {
+      currentQuestion = q; answered = false;
+      $('#qText').textContent = `Q${q.index + 1}/${q.total}: ${q.text}`;
+
+      // Media rendering
+      const mediaEl = $('#qMedia');
+      mediaEl.innerHTML = '';
+      if (q.media && q.media.url) {
+        if (q.media.type === 'image') {
+          mediaEl.innerHTML = `<img src="${q.media.url}" alt="question image">`;
+        } else if (q.media.type === 'audio') {
+          mediaEl.innerHTML = `<div id="audioWrap"><audio controls src="${q.media.url}" style="width:100%"></audio></div>`;
+        } else if (q.media.type === 'video') {
+          mediaEl.innerHTML = `<video controls src="${q.media.url}" ></video>`;
+        }
+      }
+
+      const container = $('#options');
+      container.innerHTML = '';
+      q.options.forEach((opt, i) => {
+        const div = document.createElement('div');
+        div.className = 'option';
+        div.textContent = opt;
+        div.addEventListener('click', () => choose(i));
+        container.appendChild(div);
+      });
+      startTimer(q.timeLimit);
+    }
+
+    function choose(index) {
+      if (answered || !roomCode || !currentQuestion) return;
+      $$('.option').forEach(o => o.classList.remove('selected'));
+      $$('.option')[index]?.classList.add('selected');
+      answered = true;
+      socket.emit('player:answer', { code: roomCode, index }, (res) => { if (!res || !res.ok) return; toast('Answer sent'); });
+    }
+
+    let timerInt = null;
+    function startTimer(seconds) {
+      clearInterval(timerInt);
+      let t = seconds;
+      $('#timer').textContent = `⏱ ${t}s`;
+      timerInt = setInterval(() => { t--; if (t < 0) { clearInterval(timerInt); return; } $('#timer').textContent = `⏱ ${t}s`; }, 1000);
+    }
+
+    function renderLeaderboard(lb) {
+      const el = $('#leaderboard');
+      el.innerHTML = '';
+      lb.forEach((row, i) => {
+        const div = document.createElement('div');
+        div.className = 'row';
+        div.innerHTML = `<span>${i+1}. ${row.name}</span><b>${row.score}</b>`;
+        el.appendChild(div);
+      });
+    }
+
+    // Socket events from server
+    socket.on('room:update', (room) => { if (room && room.code) { roomCode = room.code; if (isHost) updateShareLinks(); } });
+    socket.on('lobby:players', (players) => {
+      const wrap = $('#players'); wrap.innerHTML = '';
+      players.forEach(p => { const d = document.createElement('div'); d.className='pill'; d.textContent=`${p.name}`; wrap.appendChild(d); });
+      $('#playersEmpty').style.display = players.length ? 'none' : 'block';
+    });
+    socket.on('host:answersCount', (n) => { $('#answersCount').textContent = n; });
+    socket.on('game:question', (q) => { renderQuestion(q); $('#answer').textContent=''; });
+    socket.on('game:reveal', (payload) => { const { correctIndex, leaderboard } = payload; $('#answer').textContent = 'Correct: ' + currentQuestion.options[correctIndex]; renderLeaderboard(leaderboard); });
+    socket.on('game:ended', (leaderboard) => { renderLeaderboard(leaderboard); $('#answer').textContent = 'Game over! 🎉'; });
+  </script>
+</body>
+</html>
